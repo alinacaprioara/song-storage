@@ -5,18 +5,23 @@ import os
 import zipfile
 import music_tag
 
-
 client = MongoClient('localhost', 27017)
 db = client['song_storage']
 songs = db.songs
 
-# TODO: metadata handling is different for ogg files, research also on wav files
 
 def get_metadata_from_song(file_path):
+    """
+    Extracts metadata from a song file.
 
+    Args:
+        file_path (str): Path to the song file.
+
+    Returns:
+        dict: Metadata extracted from the song file.
+    """
     try:
         f = music_tag.load_file(file_path)
-        print(f)
         metadata = {
             'file_name': os.path.basename(file_path),
             'title': str(f['title']),
@@ -38,9 +43,17 @@ def get_metadata_from_song(file_path):
             'genre': 'Unknown Genre'
         }
 
-
 def get_metadata_from_user(user_inserted_metadata, file_path):
+    """
+    Extracts metadata from user input.
 
+    Args:
+        user_inserted_metadata (dict): Metadata provided by the user.
+        file_path (str): Path to the song file.
+
+    Returns:
+        dict: Metadata extracted from the user input.
+    """
     metadata = {
         'file_name': os.path.basename(file_path),
         'title': user_inserted_metadata.get('title', 'Unknown'),
@@ -52,17 +65,30 @@ def get_metadata_from_user(user_inserted_metadata, file_path):
     return metadata
 
 
-
 def add_song(file_path, user_inserted_metadata=None):
+    """
+    Adds a song to Storage and inserts the metadata in the database.
+
+    Args:
+        file_path (str): Path to the song file.
+        user_inserted_metadata (dict, optional): Metadata provided by the user. Defaults to None.
+
+    Returns:
+        str: Success or error message.
+    """
     # adding song to Storage
     try:
+        file_name = os.path.basename(file_path)
+        if songs.find_one({'file_name': file_name}):
+            return f"A song with the file name '{file_name}' already exists in the database."
+
         if not os.path.exists('Storage'):
             os.makedirs('Storage')
 
         song_path = os.path.join('Storage', os.path.basename(file_path))
         shutil.copy(file_path, song_path)
 
-    # adding metadata to database
+        # adding metadata to database
 
         if user_inserted_metadata:
             metadata = get_metadata_from_user(user_inserted_metadata, file_path)
@@ -76,12 +102,115 @@ def add_song(file_path, user_inserted_metadata=None):
         return f"Error: {e}"
 
 
-def main():
+def delete_song(title):
+    """
+    Deletes a song from Storage and its metadata from the database
 
+    Args:
+        title (str): The title of the song to delete.
+
+    Returns:
+        str: Success or error message.
+    """
+    try:
+        matching_songs = list(songs.find({'title': title}))
+        if not matching_songs:
+            return "Sorry, no songs found with the given title."
+
+        print("Found the following matches:")
+        for index, song in enumerate(matching_songs, start=1):
+            print(f"{index}. {song['file_name']}")
+
+        choice = int(input("Enter the number of the song to delete: ")) - 1
+        if choice < 0 or choice >= len(matching_songs):
+            return "Invalid choice."
+
+        song_to_delete = matching_songs[choice]
+
+        confirm = input(f"Are you sure you want to delete '{song_to_delete['file_name']}'? (y/n): ").strip().lower()
+        if confirm != 'y':
+            return "Deletion cancelled."
+
+        if os.path.exists(song_to_delete['file_name']):
+            os.remove(song_to_delete['file_name'])
+
+        songs.delete_one({'_id': song_to_delete['_id']})
+        return f"Song '{song_to_delete['file_name']}' deleted successfully."
+
+    except Exception as e:
+        return f"Error deleting song: {e}"
+
+def modify_metadata(title):
+    """
+    Modifies the metadata of a song in the database and in the corresponding file in Storage.
+
+    Args:
+        title (str): The title of the song to modify.
+
+    Returns:
+        str: Success or error message.
+    """
+    try:
+        matching_songs = list(songs.find({'title': title}))
+        if not matching_songs:
+            return "Sorry, no songs found with the given title."
+
+        print("Found the following matches:")
+        for index, song in enumerate(matching_songs, start=1):
+            print(f"{index}. {song['file_name']}")
+
+        choice = int(input("Enter the number of the song to modify its metadata: ")) - 1
+        if choice < 0 or choice >= len(matching_songs):
+            return "Invalid choice."
+
+        song_to_modify = matching_songs[choice]
+
+        print("Current metadata:")
+        metadata_keys = ['title', 'artist', 'album', 'year', 'genre']
+        for idx, key in enumerate(metadata_keys, start=1):
+            print(f"{idx}. {key.capitalize()}: {song_to_modify.get(key, 'Unknown')}")
+
+        file_path = os.path.join('Storage', song_to_modify['file_name'])
+        f = music_tag.load_file(file_path)
+
+        while True:
+            action = input("Enter the index of the metadata to modify, 'save' to save and exit, or 'cancel' to exit without saving: ").strip().lower()
+
+            if action == 'save':
+                songs.update_one({'_id': song_to_modify['_id']}, {'$set': song_to_modify}) # update database metadata
+
+                for key in metadata_keys: # update file metadata
+                    if key in song_to_modify:
+                        f[key] = song_to_modify[key]
+                f.save()
+                return "Metadata updated successfully."
+            elif action == 'cancel':
+                return "Modification cancelled."
+
+            try:
+                action_index = int(action) - 1
+                if action_index < 0 or action_index >= len(metadata_keys):
+                    print("Invalid index. Try again.")
+                    continue
+
+                key_to_modify = metadata_keys[action_index]
+                new_value = input(f"Enter new value for {key_to_modify.capitalize()}: ")
+                song_to_modify[key_to_modify] = new_value
+
+            except ValueError:
+                print("Invalid input. Try again.")
+
+    except Exception as e:
+        return f"Error modifying song: {e}"
+
+
+def main():
     while True:
         print("1. Add song")
-        print("2. Exit")
-        choice = input("Enter your choice: ")
+        print("2. Delete song")
+        print("3. Modify metadata")
+        print("4. Exit")
+        choice = input("Enter the digit of the command: ")
 
         if choice == '1':
             file_path = input("Please provide file_path of the song: ")
@@ -106,10 +235,15 @@ def main():
                 user_inserted_metadata = None
             print(add_song(file_path, user_inserted_metadata))
         elif choice == '2':
+            title = input("Enter the title of the song to delete: ")
+            print(delete_song(title))
+        elif choice == '3':
+            title = input("Enter the title of the song to modify: ")
+            print(modify_metadata(title))
+        elif choice == '4':
             break
         else:
             print("Invalid choice")
-
 
 
 if __name__ == "__main__":
