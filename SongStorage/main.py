@@ -4,6 +4,7 @@ from pymongo import MongoClient
 import os
 import zipfile
 import music_tag
+import pygame
 
 client = MongoClient('localhost', 27017)
 db = client['song_storage']
@@ -272,6 +273,56 @@ def search(criteria):
         return f"Error searching songs: {e}"
 
 
+def play_song(title):
+    """
+    Plays a song.
+
+    Args:
+        title (str): The title of the song to play.
+
+    Returns:
+        str: Success or error message.
+    """
+    try:
+        matching_songs = list(songs.find({'title': title}))
+        if not matching_songs:
+            return "Sorry, no songs found with the given title."
+
+        print("Found the following matches:")
+        for index, song in enumerate(matching_songs, start=1):
+            print(f"{index}. {song['file_name']}")
+
+        choice = int(input("Enter the number of the song to play: ")) - 1
+        if choice < 0 or choice >= len(matching_songs):
+            return "Invalid choice."
+
+        song_to_play = matching_songs[choice]
+
+        file_path = os.path.join('Storage', song_to_play['file_name'])
+        pygame.init()
+        chosen_song = pygame.mixer.Sound(file_path)
+        chosen_song.play()
+        print(f"Now playing '{song_to_play['file_name']}'.")
+        # press pause or stop
+        while True:
+            action = input("Enter 'pause' to pause the song, 'stop' to stop the song, 'start' to start it, 'exit' to exit: ").strip().lower()
+            if action == 'pause':
+                pygame.mixer.pause()
+            elif action == 'stop':
+                pygame.mixer.stop()
+            elif action == 'start':
+                if pygame.mixer.get_busy():
+                    pygame.mixer.unpause()
+                else:
+                    chosen_song.play()
+            elif action == 'exit':
+                pygame.quit()
+                return "Song stopped."
+            else:
+                print("Invalid action. Try again.")
+    except Exception as e:
+        return f"Error playing song: {e}"
+
 def main():
     while True:
         print("1. Add song")
@@ -348,7 +399,8 @@ def main():
                 criteria['format'] = format_criteria
             print(search(criteria))
         elif choice == '6':
-            print("This feature is not implemented yet.")
+            title = input("Enter the title of the song to play: ")
+            print(play_song(title))
         elif choice == '7':
             break
         else:
