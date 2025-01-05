@@ -204,12 +204,49 @@ def modify_metadata(title):
         return f"Error modifying song: {e}"
 
 
+def create_save_list(output_path, criteria):
+    """
+    Creates a zip archive with songs matching the given criteria.
+
+    Args:
+        output_path (str): Path to save the zip archive.
+        criteria (dict): Dictionary containing search criteria.
+
+    Returns:
+        str: Success or error message.
+    """
+    try:
+        matching_songs = list(songs.find(criteria))
+        if not matching_songs:
+            return "No songs found matching the given criteria."
+
+        dir_path = os.path.join('Storage', 'Archive')
+
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        final_path = os.path.join(dir_path, output_path)
+
+        z = zipfile.ZipFile(final_path, "w", zipfile.ZIP_DEFLATED)
+        for song in matching_songs:
+            song_path = os.path.join('Storage', song['file_name'])
+            if os.path.exists(song_path):
+                z.write(song_path, arcname=os.path.basename(song_path))
+        z.close()
+
+        return f"Save list created successfully at {output_path}."
+
+    except Exception as e:
+        return f"Error creating save list: {e}"
+
+
 def main():
     while True:
         print("1. Add song")
         print("2. Delete song")
         print("3. Modify metadata")
-        print("4. Exit")
+        print("4. Create save list")
+        print("5. Exit")
         choice = input("Enter the digit of the command: ")
 
         if choice == '1':
@@ -241,10 +278,23 @@ def main():
             title = input("Enter the title of the song to modify: ")
             print(modify_metadata(title))
         elif choice == '4':
+            output_path = input("Enter the output path for the save list (e.g., songs.zip): ")
+            print("Enter search criteria (leave blank to skip):")
+            criteria = {}
+            artist = input("Artist: ")
+            if artist:
+                criteria['artist'] = artist
+            genre = input("Genre: ")
+            if genre:
+                criteria['genre'] = genre
+            year = input("Year: ")
+            if year:
+                criteria['year'] = year
+            print(create_save_list(output_path, criteria))
+        elif choice == '5':
             break
         else:
             print("Invalid choice")
-
 
 if __name__ == "__main__":
     main()
