@@ -24,12 +24,11 @@ def get_metadata_from_song(file_path):
         f = music_tag.load_file(file_path)
         metadata = {
             'file_name': os.path.basename(file_path),
-            'title': str(f['title']),
-            'artist': str(f['artist']),
-            'album': str(f['album']),
-            'year': str(f['year']),
-            'genre': str(f['genre'])
-            # de vazut la genre ca nu prea exista in metadate
+            'title': str(f['title']) if str(f['title']).strip() else 'Unknown',
+            'artist': str(f['artist']) if str(f['artist']).strip() else 'Unknown Artist',
+            'album': str(f['album']) if str(f['album']).strip() else 'Unknown Album',
+            'year': str(f['year']) if str(f['year']).strip() else 'Unknown Year',
+            'genre': str(f['genre']) if str(f['genre']).strip() else 'Unknown Genre'
         }
         return metadata
     except Exception as e:
@@ -240,13 +239,48 @@ def create_save_list(output_path, criteria):
         return f"Error creating save list: {e}"
 
 
+def search(criteria):
+    """
+    Searches for songs in the database based on given criteria and returns their metadata.
+
+    Args:
+        criteria (dict): Dictionary containing search criteria.
+
+    Returns:
+        str: Metadata of matching songs or a message if no matches are found.
+    """
+    try:
+        format_criteria = criteria.pop('format', None)
+
+        matching_songs = list(songs.find(criteria))
+        if not matching_songs:
+            return "No songs found matching the given criteria."
+
+        if format_criteria:
+            matching_songs = [song for song in matching_songs
+                              if song.get('file_name', '').split('.')[-1] == format_criteria]
+            if not matching_songs:
+                return f"No songs found matching the format '{format_criteria}'."
+
+        result = "Matching songs:\n"
+        for index, song in enumerate(matching_songs, start=1):
+            result += f"{index}. Title: {song.get('title', 'Unknown')}, Artist: {song.get('artist', 'Unknown')}, " \
+                      f"Album: {song.get('album', 'Unknown')}, Year: {song.get('year', 'Unknown')}, " \
+                      f"Genre: {song.get('genre', 'Unknown')}, File Name: {song.get('file_name', 'Unknown')}\n"
+        return result
+    except Exception as e:
+        return f"Error searching songs: {e}"
+
+
 def main():
     while True:
         print("1. Add song")
         print("2. Delete song")
-        print("3. Modify metadata")
-        print("4. Create save list")
-        print("5. Exit")
+        print("3. Modify metadata of a song")
+        print("4. Create archive of songs")
+        print("5. Search song")
+        print("6. Play song")
+        print("7. Exit")
         choice = input("Enter the digit of the command: ")
 
         if choice == '1':
@@ -292,6 +326,30 @@ def main():
                 criteria['year'] = year
             print(create_save_list(output_path, criteria))
         elif choice == '5':
+            print("Enter search criteria (leave blank to skip):")
+            criteria = {}
+            title = input("Title: ")
+            if title:
+                criteria['title'] = title
+            artist = input("Artist: ")
+            if artist:
+                criteria['artist'] = artist
+            album = input("Album: ")
+            if album:
+                criteria['album'] = album
+            year = input("Year: ")
+            if year:
+                criteria['year'] = year
+            genre = input("Genre: ")
+            if genre:
+                criteria['genre'] = genre
+            format_criteria = input("Format (e.g., mp3): ")
+            if format_criteria:
+                criteria['format'] = format_criteria
+            print(search(criteria))
+        elif choice == '6':
+            print("This feature is not implemented yet.")
+        elif choice == '7':
             break
         else:
             print("Invalid choice")
