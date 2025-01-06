@@ -1,6 +1,7 @@
 import shutil
 
 from pymongo import MongoClient
+import pymongo.errors as pymongo_err
 import os
 import zipfile
 import music_tag
@@ -11,17 +12,27 @@ db = client['song_storage']
 songs = db.songs
 
 
-def get_metadata_from_song(file_path):
+def get_metadata_from_song(file_path=None):
     """
-    Extracts metadata from a song file.
+    Extract metadata from a song file.
 
     Args:
         file_path (str): Path to the song file.
 
     Returns:
-        dict: Metadata extracted from the song file.
+        dict: Metadata extracted from the song file or default values if an exception occurs.
+
+    Raises:
+        ValueError: If no file path is provided.
+        FileNotFoundError: If the file is not found.
     """
+
     try:
+        if not file_path:
+            raise ValueError("No file path provided.")
+        if not os.path.exists(file_path):
+            raise FileNotFoundError("File not found.")
+
         f = music_tag.load_file(file_path)
         metadata = {
             'file_name': os.path.basename(file_path),
@@ -32,8 +43,9 @@ def get_metadata_from_song(file_path):
             'genre': str(f['genre']) if str(f['genre']).strip() else 'Unknown Genre'
         }
         return metadata
+
     except Exception as e:
-        print(e)
+        print(f"Error extracting metadata, setting default values: {e}")
         return {
             'file_name': os.path.basename(file_path),
             'title': 'Unknown',
@@ -45,7 +57,7 @@ def get_metadata_from_song(file_path):
 
 def get_metadata_from_user(user_inserted_metadata, file_path):
     """
-    Extracts metadata from user input.
+    Extract metadata from user input.
 
     Args:
         user_inserted_metadata (dict): Metadata provided by the user.
@@ -53,7 +65,16 @@ def get_metadata_from_user(user_inserted_metadata, file_path):
 
     Returns:
         dict: Metadata extracted from the user input.
+
+    Raises:
+        ValueError: If no file path is provided.
+        FileNotFoundError: If the file is not found.
     """
+    if not file_path:
+        raise ValueError("No file path provided.")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError("File not found.")
+
     metadata = {
         'file_name': os.path.basename(file_path),
         'title': user_inserted_metadata.get('title', 'Unknown'),
@@ -67,7 +88,7 @@ def get_metadata_from_user(user_inserted_metadata, file_path):
 
 def add_song(file_path, user_inserted_metadata=None):
     """
-    Adds a song to Storage and inserts the metadata in the database.
+    Add a song to Storage and insert the metadata in the database.
 
     Args:
         file_path (str): Path to the song file.
@@ -78,6 +99,7 @@ def add_song(file_path, user_inserted_metadata=None):
     """
     # adding song to Storage
     try:
+
         file_name = os.path.basename(file_path)
         if songs.find_one({'file_name': file_name}):
             return f"A song with the file name '{file_name}' already exists in the database."
@@ -85,26 +107,39 @@ def add_song(file_path, user_inserted_metadata=None):
         if not os.path.exists('Storage'):
             os.makedirs('Storage')
 
+        # adding song to Storage
         song_path = os.path.join('Storage', os.path.basename(file_path))
-        shutil.copy(file_path, song_path)
+        try:
+            shutil.copy(file_path, song_path)
+        except PermissionError as e:
+            return f"Permission error: {e}"
+        except shutil.Error as e:
+            return f"Error copying file: {e}"
 
         # adding metadata to database
-
         if user_inserted_metadata:
             metadata = get_metadata_from_user(user_inserted_metadata, file_path)
         else:
             metadata = get_metadata_from_song(file_path)
 
-        res = songs.insert_one(metadata)
+        try:
+            res = songs.insert_one(metadata)
+        except pymongo_err.PyMongoError as e:
+            return f"Error inserting metadata: {e}"
+
         return f"Song added with id: {res.inserted_id}"
 
+    except ValueError as e:
+        return f"Error: {e}"
+    except FileNotFoundError as e:
+        return f"Error: {e}"
     except Exception as e:
         return f"Error: {e}"
 
 
 def delete_song(title):
     """
-    Deletes a song from Storage and its metadata from the database
+    Delete a song from Storage and its metadata from the database
 
     Args:
         title (str): The title of the song to delete.
@@ -131,10 +166,19 @@ def delete_song(title):
         if confirm != 'y':
             return "Deletion cancelled."
 
-        if os.path.exists(song_to_delete['file_name']):
-            os.remove(song_to_delete['file_name'])
+        # deleting song from Storage
+        try:
+            if os.path.exists(song_to_delete['file_name']):
+                os.remove(song_to_delete['file_name'])
+        except PermissionError as e:
+            return f"Permission error: {e}"
 
-        songs.delete_one({'_id': song_to_delete['_id']})
+        # deleting metadata from database
+        try:
+            songs.delete_one({'_id': song_to_delete['_id']})
+        except pymongo_err.PyMongoError as e:
+            return f"Error deleting metadata: {e}"
+
         return f"Song '{song_to_delete['file_name']}' deleted successfully."
 
     except Exception as e:
@@ -206,7 +250,7 @@ def modify_metadata(title):
 
 def create_save_list(output_path, criteria):
     """
-    Creates a zip archive with songs matching the given criteria.
+    Create a zip archive with songs matching the given criteria.
 
     Args:
         output_path (str): Path to save the zip archive.
@@ -223,16 +267,27 @@ def create_save_list(output_path, criteria):
         dir_path = os.path.join('Storage', 'Archive')
 
         if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+            try:
+                os.makedirs(dir_path)
+            except PermissionError as e:
+                return f"Permission error: {e}"
+            except OSError as e:
+                return f"Error creating directory: {e}"
 
         final_path = os.path.join(dir_path, output_path)
 
-        z = zipfile.ZipFile(final_path, "w", zipfile.ZIP_DEFLATED)
-        for song in matching_songs:
-            song_path = os.path.join('Storage', song['file_name'])
-            if os.path.exists(song_path):
-                z.write(song_path, arcname=os.path.basename(song_path))
-        z.close()
+        try:
+            with zipfile.ZipFile(final_path, "w", zipfile.ZIP_DEFLATED) as z:
+                for song in matching_songs:
+                    song_path = os.path.join('Storage', song['file_name'])
+                    if os.path.exists(song_path):
+                        z.write(song_path, arcname=os.path.basename(song_path))
+                    else:
+                        print(f"Warning: File '{song_path}' not found. Skipping.")
+        except PermissionError as e:
+            return f"Permission error: {e}"
+        except zipfile.BadZipfile as e:
+            return f"Error creating zip archive: {e}"
 
         return f"Save list created successfully at {output_path}."
 
@@ -242,7 +297,7 @@ def create_save_list(output_path, criteria):
 
 def search(criteria):
     """
-    Searches for songs in the database based on given criteria and returns their metadata.
+    Search for songs in the database based on given criteria and return their metadata.
 
     Args:
         criteria (dict): Dictionary containing search criteria.
@@ -405,6 +460,8 @@ def main():
             break
         else:
             print("Invalid choice")
+
+        input("\033[35mPress Enter to return to main menu...\033[0m")
 
 if __name__ == "__main__":
     main()
