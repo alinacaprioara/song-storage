@@ -97,9 +97,8 @@ def add_song(file_path, user_inserted_metadata=None):
     Returns:
         str: Success or error message.
     """
-    # adding song to Storage
-    try:
 
+    try:
         file_name = os.path.basename(file_path)
         if songs.find_one({'file_name': file_name}):
             return f"A song with the file name '{file_name}' already exists in the database."
@@ -167,9 +166,10 @@ def delete_song(title):
             return "Deletion cancelled."
 
         # deleting song from Storage
+        file_path = os.path.join('Storage', song_to_delete['file_name'])
         try:
-            if os.path.exists(song_to_delete['file_name']):
-                os.remove(song_to_delete['file_name'])
+            if os.path.exists(file_path):
+                os.remove(file_path)
         except PermissionError as e:
             return f"Permission error: {e}"
 
@@ -430,6 +430,8 @@ def main():
             year = input("Year: ")
             if year:
                 criteria['year'] = year
+            if not criteria:
+                print("No criteria provided. All songs will be included in the save list.")
             print(create_save_list(output_path, criteria))
         elif choice == '5':
             print("Enter search criteria (leave blank to skip):")
